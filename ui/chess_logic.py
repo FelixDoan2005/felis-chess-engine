@@ -1,4 +1,12 @@
+from __future__ import annotations
+
+from typing import Any
+
 from ui.constants import OFFSET, SQUARE_SIZE
+
+Square = tuple[int, int]
+Grid = list[list[str | None]]
+Move = tuple[Square, Square]
 
 STARTING_POSITION = [
     ["black_rook", "black_knight", "black_bishop", "black_queen", "black_king", "black_bishop", "black_knight", "black_rook"],
@@ -11,7 +19,7 @@ STARTING_POSITION = [
     ["white_rook", "white_knight", "white_bishop", "white_queen", "white_king", "white_bishop", "white_knight", "white_rook"],
 ]
 
-def pixel_to_square(x, y):
+def pixel_to_square(x: int, y: int) -> Square | None:
     col = (x - OFFSET) // SQUARE_SIZE
     row = (y - OFFSET) // SQUARE_SIZE
     if 0 <= row < 8 and 0 <= col < 8:
@@ -19,7 +27,7 @@ def pixel_to_square(x, y):
     return None
 
 class Board:
-    def __init__(self):
+    def __init__(self) -> None:
         self.grid = [row[:] for row in STARTING_POSITION]
         self.turn = "white"
         self.white_king = (7,4)
@@ -28,17 +36,17 @@ class Board:
         self.white_rook_kingside_moved = False
         self.white_rook_queenside_moved = False
         self.black_king_moved = False
-        self.black_rook_kingside_moved = False  
+        self.black_rook_kingside_moved = False
         self.black_rook_queenside_moved = False
         self.en_passant_ts = None
         self.halfmove_clock = 0  # plies since the last capture or pawn move (50-move rule)
         self.history = [self.position_key()]
         self.position_counts = {self.history[0]: 1}
 
-    def get_piece(self, row, col):
+    def get_piece(self, row: int, col: int) -> str | None:
         return self.grid[row][col]
 
-    def position_key(self):
+    def position_key(self) -> tuple:
         return (
             tuple(tuple(row) for row in self.grid),
             self.turn,
@@ -47,7 +55,7 @@ class Board:
             self.black_king_moved, self.black_rook_kingside_moved, self.black_rook_queenside_moved,
         )
 
-    def move_piece(self, from_sq, to_sq):
+    def move_piece(self, from_sq: Square, to_sq: Square) -> None:
         fr, fc = from_sq
         tr, tc = to_sq
         moving_piece = self.grid[fr][fc]
@@ -70,7 +78,7 @@ class Board:
 
         if moving_piece.split("_")[1] == "pawn" and fc != tc and destination_empty and prev_en_passant_ts is not None:
             self.grid[prev_en_passant_ts[0]][prev_en_passant_ts[1]] = None
-        
+
         #tracks kings
         if self.grid[tr][tc] == "white_king":
             self.white_king = (tr, tc)
@@ -122,7 +130,7 @@ class Board:
         self.position_counts[key] = self.position_counts.get(key, 0) + 1
 
 
-def insufficient_material(grid):
+def insufficient_material(grid: Grid) -> bool:
     minors = []  # (kind, square colour) of every knight/bishop on the board
     for r in range(8):
         for c in range(8):
@@ -144,7 +152,7 @@ def insufficient_material(grid):
     return all_bishops and same_colour
 
 
-def draw_reason(board):
+def draw_reason(board: Board) -> str | None:
     if board.position_counts[board.history[-1]] >= 3:
         return "threefold repetition"
     if board.halfmove_clock >= 100:
@@ -153,7 +161,7 @@ def draw_reason(board):
         return "insufficient material"
     return None
 
-def pawn_moves(row, col, grid, colour, en_passant_ts):
+def pawn_moves(row: int, col: int, grid: Grid, colour: str, en_passant_ts: Square | None) -> list[Square]:
     moves = []
     if colour == 'white':
         direction = -1
@@ -192,7 +200,7 @@ def pawn_moves(row, col, grid, colour, en_passant_ts):
 
     return moves
 
-def knight_moves(row, col, grid, colour):
+def knight_moves(row: int, col: int, grid: Grid, colour: str) -> list[Square]:
     moves = []
     jumps = [
         (-2, -1), (-2, +1),  # two up, one side
@@ -211,7 +219,7 @@ def knight_moves(row, col, grid, colour):
 
     return moves
 
-def bishop_moves(row, col, grid, colour):
+def bishop_moves(row: int, col: int, grid: Grid, colour: str) -> list[Square]:
     moves = []
 
     # down-right
@@ -264,7 +272,7 @@ def bishop_moves(row, col, grid, colour):
 
     return moves
 
-def rook_moves(row, col, grid, colour):
+def rook_moves(row: int, col: int, grid: Grid, colour: str) -> list[Square]:
     moves = []
     for i in range(1,8):
         #down
@@ -291,7 +299,7 @@ def rook_moves(row, col, grid, colour):
                 break
 
     for i in range(1,8):
-        #left 
+        #left
         if 0 <= col- i <= 7:
             piece = grid[row][col-i]
             if piece is None:
@@ -301,9 +309,9 @@ def rook_moves(row, col, grid, colour):
                 break
             else:
                 break
-            
+
     for i in range(1,8):
-        #left 
+        #left
         if 0 <= col+ i <= 7:
             piece = grid[row][col+i]
             if piece is None:
@@ -316,11 +324,11 @@ def rook_moves(row, col, grid, colour):
 
     return moves
 
-def queen_moves(row, col, grid, colour):
+def queen_moves(row: int, col: int, grid: Grid, colour: str) -> list[Square]:
     moves = bishop_moves(row, col, grid, colour) + rook_moves(row, col, grid, colour)
     return moves
 
-def pawn_attack_squares(row, col, colour):
+def pawn_attack_squares(row: int, col: int, colour: str) -> list[Square]:
     # Both forward diagonals, whether or not anything stands there. Unlike
     # pawn_moves, never the square straight ahead: pawns don't attack forward.
     if colour == "white":
@@ -338,7 +346,7 @@ DIAGONAL_DIRECTIONS = [(-1, -1), (-1, 1), (1, -1), (1, 1)]
 STRAIGHT_DIRECTIONS = [(-1, 0), (1, 0), (0, -1), (0, 1)]
 
 
-def square_attacked(grid, square, by_colour):
+def square_attacked(grid: Grid, square: Square, by_colour: str) -> bool:
     # Instead of generating every enemy move, look outward from the square for
     # a piece that could reach it: pawns, knights and the king on their fixed
     # squares, rooks/bishops/queens along lines (stopping at the first piece).
@@ -380,7 +388,7 @@ def square_attacked(grid, square, by_colour):
     return False
 
 
-def king_moves(row, col, grid, colour, board):
+def king_moves(row: int, col: int, grid: Grid, colour: str, board: Board) -> list[Square]:
     moves = []
 
     if colour == "white":
@@ -434,15 +442,15 @@ piece_moves = {
     "king" : king_moves,
 }
 
-def in_check(grid, colour, king_pos):
+def in_check(grid: Grid, colour: str, king_pos: Square) -> bool:
     if colour == "white":
         enemy_colour = "black"
     else:
         enemy_colour = "white"
     return square_attacked(grid, king_pos, enemy_colour)
-    
 
-def is_legal_move(grid, colour, from_sq, to_sq, king_pos):
+
+def is_legal_move(grid: Grid, colour: str, from_sq: Square, to_sq: Square, king_pos: Square) -> bool:
         fr, fc = from_sq
         tr, tc = to_sq
 
@@ -462,7 +470,7 @@ def is_legal_move(grid, colour, from_sq, to_sq, king_pos):
 
         return result
 
-def select_piece(square, piece, board, piece_moves):
+def select_piece(square: Square, piece: str, board: Board, piece_moves: dict[str, Any]) -> tuple[Square, list[Square]]:
     row, col = square
     colour = piece.split("_")[0]
     current_piece = piece.split("_")[1]
@@ -479,7 +487,7 @@ def select_piece(square, piece, board, piece_moves):
     legal_highlights = [move for move in highlights if is_legal_move(board.grid, colour, square, move, king_pos)]
     return square, legal_highlights
 
-def get_all_legal_moves(board, piece_moves):
+def get_all_legal_moves(board: Board, piece_moves: dict[str, Any]) -> list[Move]:
     total = []
     for row in range(8):
         for col in range(8):

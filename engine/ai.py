@@ -1,6 +1,14 @@
-import time
+from __future__ import annotations
 
-from ui.chess_logic import Board, get_all_legal_moves, select_piece, is_legal_move, in_check, insufficient_material, pawn_attack_squares
+import time
+from collections.abc import Sequence
+from typing import Any
+
+from ui.chess_logic import (
+    Board, Grid, Move, Square,
+    get_all_legal_moves, select_piece, is_legal_move, in_check,
+    insufficient_material, pawn_attack_squares,
+)
 from ui.chess_logic import KNIGHT_JUMPS, KING_STEPS, DIAGONAL_DIRECTIONS, STRAIGHT_DIRECTIONS
 
 CHECKMATE_SCORE = 999999
@@ -105,8 +113,11 @@ PIECE_SQUARE_TABLES = {
     "king": KING_TABLE,
 }
 
+# (row, col, colour, kind, covered_squares)
+PieceInfo = tuple[int, int, str, str, list[Square]]
 
-def piece_square_value(kind, colour, row, col, weight=0.0):
+
+def piece_square_value(kind: str, colour: str, row: int, col: int, weight: float = 0.0) -> float:
     if colour == "white":
         table_row = row
     else:
@@ -127,7 +138,7 @@ PIECE_VALUES = {
 }
 
 
-def evaluate(board):
+def evaluate(board: Board) -> float:
     grid = board.grid
     # Worked out once here and shared, instead of each heuristic scanning the
     # board and recomputing the same things.
@@ -168,7 +179,7 @@ MOBILITY_WEIGHTS_ENDGAME = {
     "queen": 0.02,
 }
 
-def moves_from(covered, grid, colour):
+def moves_from(covered: list[Square], grid: Grid, colour: str) -> list[Square]:
     # The squares a piece can actually move to: what it covers, minus squares
     # holding its own side's pieces (those it only defends).
     moves = []
@@ -179,7 +190,7 @@ def moves_from(covered, grid, colour):
     return moves
 
 
-def mobility(board, weight=None, pieces=None):
+def mobility(board: Board, weight: float | None = None, pieces: list[PieceInfo] | None = None) -> float:
     if weight is None:
         weight = endgame_weight(board)
     if pieces is None:
@@ -187,7 +198,7 @@ def mobility(board, weight=None, pieces=None):
     grid = board.grid
 
     # Squares each side's pieces shouldn't count: ones attacked by enemy pawns.
-    unsafe = {"white": set(), "black": set()}
+    unsafe: dict[str, set[Square]] = {"white": set(), "black": set()}
     for _, _, colour, kind, covered in pieces:
         if kind == "pawn":
             if colour == "white":
@@ -199,7 +210,7 @@ def mobility(board, weight=None, pieces=None):
     for kind in MOBILITY_WEIGHTS:
         per_move[kind] = blend(MOBILITY_WEIGHTS[kind], MOBILITY_WEIGHTS_ENDGAME[kind], weight)
 
-    score = 0
+    score = 0.0
     for _, _, colour, kind, covered in pieces:
         if kind not in MOBILITY_WEIGHTS:
             continue
@@ -232,8 +243,8 @@ PASSED_PAWN_MAX = {"middlegame": 0.70, "endgame": 1.40}
 PASSED_PAWN_SCALE = [0, 0, 26, 77, 154, 256]
 
 
-def pawn_files(grid, colour):
-    column_with_pawns = {}
+def pawn_files(grid: Grid, colour: str) -> dict[int, list[int]]:
+    column_with_pawns: dict[int, list[int]] = {}
     for r in range(8):
         for c in range(8):
             piece = grid[r][c]
@@ -249,7 +260,7 @@ def pawn_files(grid, colour):
 
 
 
-def is_passed(row, col, colour, enemy_files):
+def is_passed(row: int, col: int, colour: str, enemy_files: dict[int, list[int]]) -> bool:
     for check_col in (col - 1, col, col + 1):
         for enemy_row in enemy_files.get(check_col, []):
             if colour == "white" and enemy_row < row:
@@ -259,7 +270,7 @@ def is_passed(row, col, colour, enemy_files):
     return True
 
 
-def enemy_pawn_in_front(row, col, colour, enemy_files):
+def enemy_pawn_in_front(row: int, col: int, colour: str, enemy_files: dict[int, list[int]]) -> bool:
     for enemy_row in enemy_files.get(col, []):
         if colour == "white" and enemy_row < row:
             return True
@@ -268,11 +279,11 @@ def enemy_pawn_in_front(row, col, colour, enemy_files):
     return False
 
 
-def both_pawn_files(grid):
+def both_pawn_files(grid: Grid) -> dict[str, dict[int, list[int]]]:
     return {"white": pawn_files(grid, "white"), "black": pawn_files(grid, "black")}
 
 
-def pawn_structure(board, weight=None, files=None):
+def pawn_structure(board: Board, weight: float | None = None, files: dict[str, dict[int, list[int]]] | None = None) -> float:
     if weight is None:
         weight = endgame_weight(board)
     if files is None:
@@ -284,7 +295,7 @@ def pawn_structure(board, weight=None, files=None):
     passed_min = blend(PASSED_PAWN_MIN["middlegame"], PASSED_PAWN_MIN["endgame"], weight)
     passed_max = blend(PASSED_PAWN_MAX["middlegame"], PASSED_PAWN_MAX["endgame"], weight)
 
-    score = 0
+    score = 0.0
 
     for colour in ("white", "black"):
         if colour == "white":
@@ -294,7 +305,7 @@ def pawn_structure(board, weight=None, files=None):
         own_files = files[colour]
         enemy_files = files[enemy]
 
-        side_score = 0
+        side_score = 0.0
 
         for col, rows in own_files.items():
             if len(rows) > 1:
@@ -337,7 +348,7 @@ PHASE_WEIGHTS = {"knight": 1, "bishop": 1, "rook": 2, "queen": 4}
 TOTAL_PHASE = 24
 
 
-def endgame_weight(board, pieces=None):
+def endgame_weight(board: Board, pieces: list[PieceInfo] | None = None) -> float:
     # 0.0 with all pieces on the board, rising to 1.0 when only kings and
     # pawns are left.
     if pieces is None:
@@ -348,11 +359,11 @@ def endgame_weight(board, pieces=None):
     return max(0, TOTAL_PHASE - remaining) / TOTAL_PHASE  # max() in case promotions add material
 
 
-def blend(middlegame_value, endgame_value, weight):
+def blend(middlegame_value: float, endgame_value: float, weight: float) -> float:
     return middlegame_value + (endgame_value - middlegame_value) * weight
 
 
-def bishop_pair(board, weight=None):
+def bishop_pair(board: Board, weight: float | None = None) -> float:
     if weight is None:
         weight = endgame_weight(board)
     white_bishops = 0
@@ -366,7 +377,7 @@ def bishop_pair(board, weight=None):
 
     bonus = blend(BISHOP_PAIR_BONUS["middlegame"], BISHOP_PAIR_BONUS["endgame"], weight)
 
-    score = 0
+    score = 0.0
     if white_bishops >= 2:
         score += bonus
     if black_bishops >= 2:
@@ -380,7 +391,7 @@ def bishop_pair(board, weight=None):
 MAX_SIDE_PHASE = 12  # one side's PHASE_WEIGHTS at the start: 2N + 2B + 2R + Q
 
 
-def side_phase(pieces, colour):
+def side_phase(pieces: list[PieceInfo], colour: str) -> int:
     total = 0
     for _, _, piece_colour, kind, _ in pieces:
         if piece_colour == colour:
@@ -393,7 +404,7 @@ def side_phase(pieces, colour):
 # pawn in front of the king: penalty = 36 - dist * dist centipawns, where dist
 # is 6 for a pawn on its starting square (0), 5 one step up (11), 4 two steps
 # up (20), and 0 when there's no pawn in front at all (36).
-def shelter_file_penalty(grid, col, king_row, colour):
+def shelter_file_penalty(grid: Grid, col: int, king_row: int, colour: str) -> int:
     if colour == "white":
         rows_in_front = range(king_row, -1, -1)
     else:
@@ -410,7 +421,7 @@ def shelter_file_penalty(grid, col, king_row, colour):
     return 36 - dist * dist
 
 
-def shelter_penalty(grid, king, colour):
+def shelter_penalty(grid: Grid, king: Square, colour: str) -> float:
     row, col = king
     penalty = 2 * shelter_file_penalty(grid, col, row, colour)
     for side_col in (col - 1, col + 1):
@@ -419,7 +430,7 @@ def shelter_penalty(grid, king, colour):
     return penalty / 100
 
 
-def king_pawn_shield(board, pieces=None):
+def king_pawn_shield(board: Board, pieces: list[PieceInfo] | None = None) -> float:
     grid = board.grid
     if pieces is None:
         pieces = piece_coverage(grid)
@@ -438,14 +449,14 @@ KING_ATTACK_OPENING = 20
 KING_ATTACK_WEIGHT = [0, 0, 128, 192, 224, 240, 248, 252, 254, 255, 256, 256, 256, 256, 256, 256]
 
 
-def king_zone(king):
+def king_zone(king: Square) -> set[Square]:
     row, col = king
     return {(row + dr, col + dc)
             for dr in (-1, 0, 1) for dc in (-1, 0, 1)
             if 0 <= row + dr <= 7 and 0 <= col + dc <= 7}
 
 
-def king_attackers(board, weight=None, pieces=None):
+def king_attackers(board: Board, weight: float | None = None, pieces: list[PieceInfo] | None = None) -> float:
     if weight is None:
         weight = endgame_weight(board)
     grid = board.grid
@@ -453,8 +464,8 @@ def king_attackers(board, weight=None, pieces=None):
         pieces = piece_coverage(grid)
 
     zones = {"white": king_zone(board.white_king), "black": king_zone(board.black_king)}
-    units = {"white": 0, "black": 0}      # attack units aimed at the other side's king
-    attackers = {"white": 0, "black": 0}  # number of pieces aimed at the other side's king
+    units: dict[str, int] = {"white": 0, "black": 0}      # attack units aimed at the other side's king
+    attackers: dict[str, int] = {"white": 0, "black": 0}  # number of pieces aimed at the other side's king
 
     for _, _, colour, kind, covered in pieces:
         if kind not in KING_ATTACK_UNIT:
@@ -467,7 +478,7 @@ def king_attackers(board, weight=None, pieces=None):
             units[colour] += KING_ATTACK_UNIT[kind]
             attackers[colour] += 1
 
-    score = 0
+    score = 0.0
     for colour in ("white", "black"):
         count = min(attackers[colour], len(KING_ATTACK_WEIGHT) - 1)
         attack = units[colour] * KING_ATTACK_OPENING * KING_ATTACK_WEIGHT[count] / 256 / 100
@@ -486,13 +497,13 @@ SLIDE_DIRECTIONS = {
 }
 
 
-def squares_covered_by(grid, r, c, colour, kind):
+def squares_covered_by(grid: Grid, r: int, c: int, colour: str, kind: str) -> list[Square]:
     # Squares one piece attacks, INCLUDING squares holding its own side's
     # pieces (i.e. what it defends). Sliding pieces stop at the first piece.
     if kind == "pawn":
         return pawn_attack_squares(r, c, colour)
 
-    covered = []
+    covered: list[Square] = []
     if kind in ("knight", "king"):
         if kind == "knight":
             steps = KNIGHT_JUMPS
@@ -512,11 +523,11 @@ def squares_covered_by(grid, r, c, colour, kind):
     return covered
 
 
-def piece_coverage(grid):
+def piece_coverage(grid: Grid) -> list[PieceInfo]:
     # Every piece on the board, with the squares it attacks or defends:
     # (row, col, colour, kind, covered). evaluate() builds this once per
     # position and shares it with the heuristics that need it.
-    pieces = []
+    pieces: list[PieceInfo] = []
     for r in range(8):
         for c in range(8):
             piece = grid[r][c]
@@ -537,12 +548,12 @@ def piece_coverage(grid):
 MOPUP_MIN_ADVANTAGE = 5
 
 
-def centre_distance(row, col):
+def centre_distance(row: int, col: int) -> int:
     # 0 on the four centre squares, up to 6 in a corner.
     return max(3 - row, row - 4) + max(3 - col, col - 4)
 
 
-def mop_up(board):
+def mop_up(board: Board) -> float:
     white_material = 0
     black_material = 0
     for row in board.grid:
@@ -579,17 +590,17 @@ def mop_up(board):
 # a cutoff, kept per ply (len(board.history)). A move that refuted one line is
 # often good in the lines next to it too. Emptied at the start of every
 # choose_move.
-killer_moves = {}
+killer_moves: dict[int, list[Move]] = {}
 KILLER_VALUE = 0.5  # after every capture (the cheapest scores 0.9), before quiet moves (0)
 
 
-def remember_killer(ply, move):
+def remember_killer(ply: int, move: Move) -> None:
     killers = killer_moves.get(ply, [])
     if move not in killers:
         killer_moves[ply] = [move] + killers[:1]  # keep the 2 most recent
 
 
-def order_moves(board, moves, killers=(), best_move=None):
+def order_moves(board: Board, moves: list[Move], killers: Sequence[Move] = (), best_move: Move | None = None) -> list[Move]:
     # Try first:
     #   1. best_move: the best move the transposition table has for this position
     #   2. captures, most valuable victim first and, for equal victims, the
@@ -598,12 +609,12 @@ def order_moves(board, moves, killers=(), best_move=None):
     #   4. every other move
     # On a tie, choose_move keeps the first move it found, so promotions
     # coming early also makes it promote now rather than later.
-    def move_value(move):
+    def move_value(move: Move) -> float:
         if move == best_move:
             return 1000
         from_sq, to_sq = move
         moving = board.get_piece(*from_sq)
-        value = 0
+        value = 0.0
 
         target = board.get_piece(*to_sq)
         if target is not None:
@@ -630,18 +641,18 @@ def order_moves(board, moves, killers=(), best_move=None):
 EXACT = 0        # the real score
 LOWER_BOUND = 1  # a move reached beta, so the real score is at least this
 UPPER_BOUND = 2  # no move beat alpha, so the real score is at most this
-transposition_table = {}  # kept between moves in a game when choose_move is asked to (see AI)
+transposition_table: dict[int, tuple[int, float, int, Move | None]] = {}  # kept between moves in a game when choose_move is asked to (see AI)
 MAX_TABLE_SIZE = 500000   # entries: past this it's emptied, so memory can't keep growing
 
 
-def remember_position(key, depth, score, flag, best_move):
+def remember_position(key: int, depth: int, score: float, flag: int, best_move: Move | None) -> None:
     # Keep the deeper search if the position was already stored.
     entry = transposition_table.get(key)
     if entry is None or depth >= entry[0]:
         transposition_table[key] = (depth, score, flag, best_move)
 
 
-def save_state(board):
+def save_state(board: Board) -> dict[str, Any]:
     grid_copy = []
     for row in board.grid:
         grid_copy.append(row[:])
@@ -663,7 +674,7 @@ def save_state(board):
     }
 
 
-def restore_state(board, state):
+def restore_state(board: Board, state: dict[str, Any]) -> None:
     board.grid = state["grid"]
     board.turn = state["turn"]
     board.en_passant_ts = state["en_passant_ts"]
@@ -685,7 +696,7 @@ def restore_state(board, state):
             del board.position_counts[key]
 
 
-def clone_board(board):
+def clone_board(board: Board) -> Board:
     copy = Board()
     restore_state(copy, save_state(board))
     copy.history = list(board.history)
@@ -693,7 +704,7 @@ def clone_board(board):
     return copy
 
 
-def is_draw_in_search(board):
+def is_draw_in_search(board: Board) -> bool:
     # Stricter than the real rules on purpose: a position that has occurred
     # even once before is scored as a draw, so the search sees repetition
     # coming within a few plies instead of waiting for a third occurrence.
@@ -704,7 +715,7 @@ def is_draw_in_search(board):
     return insufficient_material(board.grid)
 
 
-def make_move(board, from_sq, to_sq):
+def make_move(board: Board, from_sq: Square, to_sq: Square) -> None:
     board.move_piece(from_sq, to_sq)
     row, col = to_sq
     piece = board.grid[row][col]
@@ -712,7 +723,7 @@ def make_move(board, from_sq, to_sq):
         board.grid[row][col] = piece.split("_")[0] + "_queen"
 
 
-def is_capture_or_promotion(board, move):
+def is_capture_or_promotion(board: Board, move: Move) -> bool:
     from_sq, to_sq = move
     moving = board.grid[from_sq[0]][from_sq[1]]
     if board.grid[to_sq[0]][to_sq[1]] is not None:
@@ -725,10 +736,10 @@ def is_capture_or_promotion(board, move):
     return False
 
 
-def get_legal_captures(board, piece_moves):
+def get_legal_captures(board: Board, piece_moves: dict[str, Any]) -> list[Move]:
     # like get_all_legal_moves, but only checks if captures and promotions
     # are legal, the only moves quiescence search plays
-    captures = []
+    captures: list[Move] = []
     if board.turn == "white":
         king_pos = board.white_king
     else:
@@ -762,7 +773,7 @@ DELTA_MARGIN = 2
 LATE_ENDGAME_PHASE = 6
 
 
-def game_phase(board):
+def game_phase(board: Board) -> int:
     # phase points left: 24 at the start, 0 with only kings and pawns
     remaining = 0
     for row in board.grid:
@@ -772,7 +783,7 @@ def game_phase(board):
     return remaining
 
 
-def has_legal_move(board, piece_moves):
+def has_legal_move(board: Board, piece_moves: dict[str, Any]) -> bool:
     # stops at the first legal move it finds
     for row in range(8):
         for col in range(8):
@@ -789,7 +800,7 @@ def has_legal_move(board, piece_moves):
 # quiet, and only score it then. Without it, the engine scores positions in the
 # middle of a trade, e.g. right after its queen takes a defended pawn, before
 # the recapture (the horizon effect!!!).
-def quiescence(board, piece_moves, alpha, beta):
+def quiescence(board: Board, piece_moves: dict[str, Any], alpha: float, beta: float) -> float:
     check_time()
     if is_draw_in_search(board):
         return 0
@@ -855,17 +866,17 @@ def quiescence(board, piece_moves, alpha, beta):
 
 # check extension limit, set by choose_move: a long chain of checks
 # can't make the search go on forever
-max_search_ply = 0
+max_search_ply: int = 0
 
 # time limit, set by choose_move: when to stop searching (None = no limit)
-search_deadline = None
+search_deadline: float | None = None
 
 
 class SearchTimeout(Exception):
     pass
 
 
-def check_time():
+def check_time() -> None:
     # out of time: stop the search straight away
     if search_deadline is not None and time.perf_counter() > search_deadline:
         raise SearchTimeout
@@ -895,7 +906,7 @@ LMR_MIN_DEPTH = 3
 LMR_REDUCTION = 1
 
 
-def search_child(board, piece_moves, depth, alpha, beta, first_move, reduce=False):
+def search_child(board: Board, piece_moves: dict[str, Any], depth: int, alpha: float, beta: float, first_move: bool, reduce: bool = False) -> float:
     # the move has already been made on the board
     if first_move:
         return -negamax(board, piece_moves, depth, -beta, -alpha)
@@ -917,7 +928,7 @@ def search_child(board, piece_moves, depth, alpha, beta, first_move, reduce=Fals
     return score
 
 
-def negamax(board, piece_moves, depth, alpha, beta):
+def negamax(board: Board, piece_moves: dict[str, Any], depth: int, alpha: float, beta: float) -> float:
     check_time()
     # Checked before the transposition table: whether a position is a
     # repetition depends on how it was reached, which the table doesn't know.
@@ -1004,12 +1015,12 @@ def negamax(board, piece_moves, depth, alpha, beta):
 
 
 class AI:
-    def new_game(self):
+    def new_game(self) -> None:
         # nothing from the last game carries over
         killer_moves.clear()
         transposition_table.clear()
 
-    def choose_move(self, board, piece_moves, depth, time_limit=None, keep_table=False):
+    def choose_move(self, board: Board, piece_moves: dict[str, Any], depth: int, time_limit: float | None = None, keep_table: bool = False) -> Move | None:
         # keep_table: keep the transposition table from earlier moves in this
         # game, so positions already worked out aren't searched again (the UCI
         # engine does this). Left off, the table starts empty every move, which
@@ -1052,11 +1063,11 @@ class AI:
             best_move = moves[0]
         return best_move
 
-    def search_root(self, board, piece_moves, moves, depth, previous_best):
+    def search_root(self, board: Board, piece_moves: dict[str, Any], moves: list[Move], depth: int, previous_best: Move | None) -> tuple[Move | None, bool]:
         # returns the best move, and whether the whole depth got searched
         alpha = -float('inf')
         beta = float('inf')
-        best_move = None
+        best_move: Move | None = None
         first_move = True
         for (from_sq, to_sq) in order_moves(board, moves, best_move=previous_best):
             state = save_state(board)
@@ -1075,5 +1086,3 @@ class AI:
                 alpha = score
                 best_move = (from_sq, to_sq)
         return best_move, True
-
-
