@@ -9,7 +9,7 @@ from modes.human import promotion_screen
 from modes import menus, pvp, pve, evs
 
 
-def main():
+def main() -> None:
     screen = create_window()
     clock = pygame.time.Clock()
     renderer = Renderer(screen)
